@@ -38,12 +38,12 @@ set_error_handler(function ($code, $message, $file, $line) {
 
 // define the content extension for error handling
 preg_match(
-    '/\.(?P<ext>\w+)$/', parse_url(trim($_SERVER['REQUEST_URI'], '/'),
+    '/\.(?P<ext>\w+)$/', parse_url(trim($_SERVER['REQUEST_URI'] ?? '', '/'),
         PHP_URL_PATH),
     $_
 );
 
-define('PFUNCS_EXTENSION', $ext['ext'] ?? 'html');
+define('PFUNCS_EXTENSION', $_['ext'] ?? 'html');
 
 // define a uid for logging and stuff - specific to the current request being processed
 define('PFUNCS_UID', uniqid());
@@ -54,12 +54,13 @@ set_exception_handler(function (Throwable $exception) {
     $error = $exception->PFUNCS_ERROR ?? [];
 
     // set values accordingly
-    $code    = $error['code']    ?? $exception->getCode();
-    $file    = $error['file']    ?? $exception->getFile();
-    $line    = $error['line']    ?? $exception->getLine();
-    $message = $error['message'] ?? $exception->getMessage();
-    $trace   = $error['trace']   ?? $exception->getTrace();
-    $status  = $error['status']  ?? 500;
+    $message = $exception->getMessage();
+
+    $code   = $error['code']    ?? $exception->getCode();
+    $file   = $error['file']    ?? $exception->getFile();
+    $line   = $error['line']    ?? $exception->getLine();
+    $trace  = $error['trace']   ?? $exception->getTrace();
+    $status = $error['status']  ?? 500;
 
     $file = basename($file);
 
@@ -120,18 +121,17 @@ set_exception_handler(function (Throwable $exception) {
     die('<html><body><pre>' . htmlentities($output) . '</pre></body></html>');
 });
 
-// include the pfuncs
-include_once(realpath(__DIR__ . '/../vendor/autoload.php'));
-
 // set some path constants
-define('PFUNCS_SRC', server_get('SERVER_NAME', 'localhost'));
+define('PFUNCS_SRC', $_SERVER['SERVER_NAME'] ?? 'localhost');
 define('PFUNCS_ROOT', realpath(__DIR__ . '/../src/' . PFUNCS_SRC));
 define('PFUNCS_CONFIGS', realpath(PFUNCS_ROOT . '/configs.php'));
 define('PFUNCS_PHP', realpath(PFUNCS_ROOT . '/php'));
 define('PFUNCS_CONTENT', realpath(PFUNCS_ROOT . '/' . PFUNCS_EXTENSION));
 
 // if there are configs then load them
-include_once_if_exists(PFUNCS_CONFIGS);
+if (file_exists(PFUNCS_CONFIGS)) {
+    include_once(PFUNCS_CONFIGS);
+}
 
 // set the timezone to utc by default
 date_default_timezone_set('UTC');
@@ -154,10 +154,27 @@ register_shutdown_function(function () {
 });
 
 // parse out the controller and action
-$_ = explode('/', parse_url(trim(server_get('REQUEST_URI', ''), '/'), PHP_URL_PATH));
+$_ = explode('/', parse_url(trim($_SERVER['REQUEST_URI'] ?? '', '/'), PHP_URL_PATH));
 
 define('PFUNCS_CONTROLLER', preg_replace('/\.\w+$/i', '', $_[0] ?? 'index'));
 define('PFUNCS_ACTION', PFUNCS_CONTROLLER === 'index' ? null : preg_replace('/\.\w+$/i', '', $_[1] ?? 'index'));
+
+// is dynamic content?
+if (!in_array(PFUNCS_EXTENSION, ['html', 'txt', 'json', 'xml', 'js', 'css'])) {
+    if (
+        file_exists($_ = PFUNCS_CONTENT . '/' . PFUNCS_CONTROLLER . '.' . PFUNCS_EXTENSION) ||
+        file_exists($_ = PFUNCS_CONTENT . '/' . PFUNCS_CONTROLLER . '/' . PFUNCS_ACTION . '.' . PFUNCS_EXTENSION)
+    ) {
+        passthru($_);
+
+        return;
+    }
+
+    error('Not Found', 404);
+}
+
+// include the pfuncs
+include_once(realpath(__DIR__ . '/../vendor/autoload.php'));
 
 // load all the php code
 foreach ([
@@ -178,7 +195,7 @@ foreach ([
     }
 }
 
-// load the content
+// load the dynamic content
 try { //<< header/footer
     ob_start();
 

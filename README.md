@@ -1,7 +1,1 @@
-# pfuncs-mmvc
-*a php micro mvc*
-
----
-
-docs coming soon
-
+# an abandoned project :(
